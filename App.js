@@ -1,46 +1,63 @@
-import * as React from "react";
+import React, { useEffect, useRef, useState } from 'react';
+import { View, Text, Image } from 'react-native';
+import * as tf from '@tensorflow/tfjs';
+import { fetch, decodeJpeg } from '@tensorflow/tfjs-react-native';
+import * as mobilenet from '@tensorflow-models/mobilenet';
 
-import { StyleSheet, View, Text } from "react-native";
-import {
-  loadTensorflowModel,
-  useTensorflowModel,
-} from "react-native-fast-tflite";
+const App = () => {
+  const [isTfReady, setIsTfReady] = useState(false);
+  const [result, setResult] = useState('');
+  const image = useRef(null);
 
-export default function App() {
-  const [result, setResult] = React.useState("");
+  const load = async () => {
+    try {
+      // Load mobilenet.
+      await tf.ready();
+      const model = await mobilenet.load();
+      setIsTfReady(true);
 
-  const model = useTensorflowModel(
-    require("../assets/object_detection_mobile_object_localizer_v1_1_default_1.tflite"),
-    "core-ml"
-  );
+      // Start inference and show result.
+      const image = require('./assets/images/background-image.png');
+      const imageAssetPath = Image.resolveAssetSource(image);
+      const response = await fetch(imageAssetPath.uri, {}, { isBinary: true });
+      const imageDataArrayBuffer = await response.arrayBuffer();
+      const imageData = new Uint8Array(imageDataArrayBuffer);
+      const imageTensor = decodeJpeg(imageData);
+      const prediction = await model.classify(imageTensor);
+      if (prediction && prediction.length > 0) {
+        setResult(
+          `${prediction[0].className} (${prediction[0].probability.toFixed(3)})`
+        );
+      }
+    } catch (err) {
+      console.log(err);
+    }
+  };
 
-  React.useEffect(() => {
-    if (model.model == null) return;
-
-    console.log(`Running Model...`);
-    const r = model.model.run([new Uint8Array([5])]);
-    r.then((output) => {
-      console.log(`Successfully ran Model!`, output);
-      setResult(`${output[0]}${output[1]}${output[2]}...`);
-    });
-  }, [model.model]);
+  useEffect(() => {
+    load();
+  }, []);
 
   return (
-    <View style={styles.container}>
-      <Text>Result: {result}</Text>
+    <View
+      style={{
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <Image
+        ref={image}
+        source={require('./assets/images/background-image.png')}
+        style={{ width: 200, height: 200 }}
+      />
+      {!isTfReady && <Text>Loading TFJS model...</Text>}
+      {isTfReady && result === '' && <Text>Classifying...</Text>}
+      {result !== '' && <Text>{result}</Text>}
     </View>
   );
-}
+};
 
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  box: {
-    width: 60,
-    height: 60,
-    marginVertical: 20,
-  },
-});
+export default App;
